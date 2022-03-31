@@ -10,6 +10,10 @@ Due the Delphi incompatiblity and some other problems I forked and changed it.
 
 # nvitya Fork Modifications
 
+2022-03-31:
+  - set usage eliminated for character checking
+  - some inline removed to avoid FPC inline hint, some comment changes
+
 2022-02-09:
   - delphi compatibility fixes,
   - delphi warning fixes,

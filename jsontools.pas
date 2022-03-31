@@ -8,7 +8,8 @@
     The jsontool.pas was originally published here: https://github.com/sysrpl/JsonTools
     Due the Delphi incompatiblity and some other problems I forked and changed it.
   Modifications:
-    2022-03-31 nvitya: inline removed to avoid FPC inline hint, some comment changes
+    2022-03-31 nvitya: - inline removed to avoid FPC inline hint, some comment changes
+                       - set usage eliminated for character checking
     2022-02-09 nvitya: delphi compatibility fixes, warning fixes, UTF8 Export
 *)
 // sysrpl original copyright header:
@@ -234,11 +235,15 @@ type
     function Value: string;
   end;
 
-const
-  Hex = ['0'..'9', 'A'..'F', 'a'..'f'];
-
 var
   json_number_format : TFormatSettings;
+
+function IsHexChar(c : char) : boolean;
+begin
+  result := ((c >= '0') and (c <= '9'))
+         or ((c >= 'A') and (c <= 'F'))
+         or ((c >= 'a') and (c <= 'f'));
+end;
 
 function TJsonToken.Value: string;
 begin
@@ -350,7 +355,7 @@ begin
           Exit(False);
         end;
         if C^ = 'u' then
-          if not ((C[1] in Hex) and (C[2] in Hex) and (C[3] in Hex) and (C[4] in Hex)) then
+          if not (IsHexChar(C[1]) and IsHexChar(C[2]) and IsHexChar(C[3]) and IsHexChar(C[4])) then
           begin
             T.Tail := C;
             T.Kind := tkError;
@@ -364,25 +369,25 @@ begin
         T.Kind := tkString;
         Exit(True);
       end;
-    until C^ in [#0, #10, #13];
+    until (C^ = #0) or (C^ = #10) or (C^ = #13);
     T.Tail := C;
     T.Kind := tkError;
     Exit(False);
   end;
-  if C^ in ['-', '0'..'9'] then
+  if (C^ = '-') or ((C^ >= '0') and (C^ <= '9')) then
   begin
     if C^ = '-' then
       Inc(C);
-    if C^ in ['0'..'9'] then
+    if (C^ >= '0') and (C^ <= '9') then
     begin
-      while C^ in ['0'..'9'] do
+      while (C^ >= '0') and (C^ <= '9') do
         Inc(C);
       if C^ = '.' then
       begin
         Inc(C);
-        if C^ in ['0'..'9'] then
+        if (C^ >= '0') and (C^ <= '9') then
         begin
-          while C^ in ['0'..'9'] do
+          while (C^ >= '0') and (C^ <= '9') do
             Inc(C);
         end
         else
@@ -392,16 +397,16 @@ begin
           Exit(False);
         end;
       end;
-      if C^ in ['E', 'e'] then
+      if (C^ = 'E') or (C^ = 'e') then
       begin
         Inc(C);
         if C^ = '+' then
           Inc(C)
         else if C^ = '-' then
           Inc(C);
-        if C^ in ['0'..'9'] then
+        if (C^ >= '0') and (C^ <= '9') then
         begin
-          while C^ in ['0'..'9'] do
+          while (C^ >= '0') and (C^ <= '9') do
             Inc(C);
         end
         else
@@ -471,7 +476,7 @@ begin
   S := '';
   SetLength(S, I);
   Stream.Read(S[1], I);
-  Parse(ansistring(UTF8Decode(S)));
+  Parse(ansistring(UTF8ToString(S)));
 end;
 
 procedure TJsonNode.SaveToStream(Stream: TStream);
@@ -1290,11 +1295,11 @@ function JsonStringEncode(const S: string): string;
     while C^ > #0 do
     begin
       if C^ < ' ' then
-        if C^ in [#8..#13] then
+        if (C^ >= #8) and (C^ <= #13) then
           Inc(I, 2)
         else
           Inc(I, 6)
-      else if C^ in ['"', '\'] then
+      else if (C^ = '"') or (C^ = '\') then
         Inc(I, 2)
       else
         Inc(I);
@@ -1324,7 +1329,7 @@ begin
     begin
       R[I] := '\';
       Inc(I);
-      if C^ in [#8..#13] then
+      if (C^ >= #8) and (C^ <= #13) then
         R[I] := EscapeChars[Ord(C^)]
       else
       begin
@@ -1336,7 +1341,7 @@ begin
         Inc(I, 4);
       end;
     end
-    else if C^ in ['"', '\'] then
+    else if (C^ = '"') or (C^ = '\') then
     begin
       R[I] := '\';
       Inc(I);
@@ -1427,7 +1432,7 @@ function JsonStringDecode(const S: string): string;
         Inc(C);
         if C^ = 'u' then
         begin
-          if (C[1] in Hex) and (C[2] in Hex) and (C[3] in Hex) and (C[4] in Hex) then
+          if IsHexChar(C[1]) and IsHexChar(C[2]) and IsHexChar(C[3]) and IsHexChar(C[4]) then
           begin
             J := UnicodeToSize(HexToInt(C[1], C[2], C[3], C[4]));
             if J = 0 then
