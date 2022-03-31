@@ -8,6 +8,7 @@
     The jsontool.pas was originally published here: https://github.com/sysrpl/JsonTools
     Due the Delphi incompatiblity and some other problems I forked and changed it.
   Modifications:
+    2022-03-31 nvitya: inline removed to avoid FPC inline hint, some comment changes
     2022-02-09 nvitya: delphi compatibility fixes, warning fixes, UTF8 Export
 *)
 // sysrpl original copyright header:
@@ -41,19 +42,15 @@ type
 
 { TJsonNodeKind is 1 of 6 possible values described below }
 
-  TJsonNodeKind = (
-    { Object such as { }
-    nkObject,
-    { Array such as [ ] }
-    nkArray,
-    { The literal values true or false }
-    nkBool,
-    { The literal value null }
-    nkNull,
-    { A number value such as 123, 1.23e2, or -1.5 }
-    nkNumber,
-    { A string such as "hello\nworld!" }
-    nkString);
+  TJsonNodeKind =
+  (
+    nkObject,  // Object such as { }
+    nkArray,   // Array such as [ ]
+    nkBool,    // The literal values true or false
+    nkNull,    // The literal value null
+    nkNumber,  // A number value such as 123, 1.23e2, or -1.5
+    nkString   // A string such as "hello\nworld!"
+  );
 
   TJsonNode = class;
 
@@ -474,7 +471,7 @@ begin
   S := '';
   SetLength(S, I);
   Stream.Read(S[1], I);
-  Parse(UTF8Decode(S));
+  Parse(ansistring(UTF8Decode(S)));
 end;
 
 procedure TJsonNode.SaveToStream(Stream: TStream);
@@ -1405,7 +1402,7 @@ begin
     Result := Ord(C) - LoA + 10;
 end;
 
-function HexToInt(A, B, C, D: Char): Integer; inline;
+function HexToInt(A, B, C, D: Char): Integer;
 begin
   Result := HexToByte(A) shl 12 or HexToByte(B) shl 8 or HexToByte(C) shl 4 or
     HexToByte(D);
