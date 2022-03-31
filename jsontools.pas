@@ -1,3 +1,16 @@
+(*
+  file:         jsontools.pas
+  description:  simple, fast and well designed JSON Parser and Writer
+                Using this small external library for JSON parsing for better future compatibility with Freepascal.
+                Its interface is much simpler, better designed, than the official Delphi JSON.
+  source:       https://github.com/nvitya/JsonTools (forked from https://github.com/sysrpl/JsonTools)
+  notes:
+    The jsontool.pas was originally published here: https://github.com/sysrpl/JsonTools
+    Due the Delphi incompatiblity and some other problems I forked and changed it.
+  Modifications:
+    2022-02-09 nvitya: delphi compatibility fixes, warning fixes, UTF8 Export
+*)
+// sysrpl original copyright header:
 (********************************************************)
 (*                                                      *)
 (*  Json Tools Pascal Unit                              *)
@@ -7,9 +20,12 @@
 (*  Dual licence GPLv3 LGPLv3 released August 2019      *)
 (*                                                      *)
 (********************************************************)
+
 unit JsonTools;
 
-{$mode delphi}
+{$ifdef FPC}
+  {$mode delphi}
+{$endif}
 
 interface
 
@@ -223,6 +239,9 @@ type
 
 const
   Hex = ['0'..'9', 'A'..'F', 'a'..'f'];
+
+var
+  json_number_format : TFormatSettings;
 
 function TJsonToken.Value: string;
 begin
@@ -448,24 +467,24 @@ end;
 
 procedure TJsonNode.LoadFromStream(Stream: TStream);
 var
-  S: string;
+  S: ansistring;
   I: Int64;
 begin
   I := Stream.Size - Stream.Position;
   S := '';
   SetLength(S, I);
-  Stream.Read(PChar(S)^, I);
-  Parse(S);
+  Stream.Read(S[1], I);
+  Parse(UTF8Decode(S));
 end;
 
 procedure TJsonNode.SaveToStream(Stream: TStream);
 var
-  S: string;
+  S: ansistring;
   I: Int64;
 begin
-  S := Value;
+  S := UTF8Encode(Value);
   I := Length(S);
-  Stream.Write(PChar(S)^, I);
+  Stream.Write(S[1], I);
 end;
 
 procedure TJsonNode.LoadFromFile(const FileName: string);
@@ -846,7 +865,7 @@ begin
     FValue := '0';
     Exit(0);
   end;
-  Result := StrToFloatDef(FValue, 0);
+  Result := StrToFloatDef(FValue, 0, json_number_format);
 end;
 
 procedure TJsonNode.SetAsNumber(Value: Double);
@@ -858,7 +877,7 @@ begin
     Clear;
     FKind := nkNumber;
   end;
-  FValue := FloatToStr(Value);
+  FValue := FloatToStr(Value, json_number_format);
 end;
 
 function TJsonNode.Add: TJsonNode;
@@ -870,6 +889,7 @@ function TJsonNode.Add(Kind: TJsonNodeKind; const Name, Value: string): TJsonNod
 var
   S: string;
 begin
+  result := nil;
   if not (FKind in [nkArray, nkObject]) then
     if Name = '' then
       AsArray
@@ -906,30 +926,31 @@ begin
     Error(SNodeNotCollection);
 end;
 
-function TJsonNode.Add(const Name: string; K: TJsonNodeKind = nkObject): TJsonNode; overload;
+function TJsonNode.Add(const Name: string; K: TJsonNodeKind = nkObject): TJsonNode; //overload;
 begin
   case K of
     nkObject, nkArray: Result := Add(K, Name, '');
-    nkNull: Result := Add(K, Name, 'null');
     nkBool: Result := Add(K, Name, 'false');
     nkNumber: Result := Add(K, Name, '0');
     nkString: Result := Add(K, Name, '""');
+  else // default
+    Result := Add(K, Name, 'null');
   end;
 end;
 
-function TJsonNode.Add(const Name: string; B: Boolean): TJsonNode; overload;
+function TJsonNode.Add(const Name: string; B: Boolean): TJsonNode; // overload;
 const
   Bools: array[Boolean] of string = ('false', 'true');
 begin
   Result := Add(nkBool, Name, Bools[B]);
 end;
 
-function TJsonNode.Add(const Name: string; const N: Double): TJsonNode; overload;
+function TJsonNode.Add(const Name: string; const N: Double): TJsonNode; // overload;
 begin
-  Result := Add(nkNumber, Name, FloatToStr(N));
+  Result := Add(nkNumber, Name, FloatToStr(N, json_number_format));
 end;
 
-function TJsonNode.Add(const Name: string; const S: string): TJsonNode; overload;
+function TJsonNode.Add(const Name: string; const S: string): TJsonNode; //overload;
 begin
   Result := Add(nkString, Name, JsonStringEncode(S));
 end;
@@ -981,6 +1002,7 @@ end;
 
 function TJsonNode.Child(Index: Integer): TJsonNode;
 begin
+  result := nil;
   if FKind in [nkArray, nkObject] then
   begin
     if FList = nil then
@@ -1025,7 +1047,7 @@ var
   A, B: PChar;
   S: string;
 begin
-  Result := nil;
+  //Result := nil;
   if Path = '' then
     Exit(Child(''));
   if Path[1] = '/' then
@@ -1082,7 +1104,7 @@ var
   A, B: PChar;
   S: string;
 begin
-  Result := nil;
+  //Result := nil;
   // AsObject;
   if Path = '' then
   begin
@@ -1428,8 +1450,6 @@ function JsonStringDecode(const S: string): string;
     Result := I;
   end;
 
-const
-  Escape = ['b', 't', 'n', 'v', 'f', 'r'];
 var
   C: PChar;
   R: string;
@@ -1449,7 +1469,6 @@ begin
     if C^ = '\' then
     begin
       Inc(C);
-      if C^ in Escape then
       case C^ of
         'b': R[I] := #8;
         't': R[I] := #9;
@@ -1457,20 +1476,19 @@ begin
         'v': R[I] := #11;
         'f': R[I] := #12;
         'r': R[I] := #13;
-      end
-      else if C^ = 'u' then
-      begin
-        H := UnicodeToString(HexToInt(C[1], C[2], C[3], C[4]));
-        for J := 1 to Length(H) - 1 do
-        begin
-          R[I] := H[J];
-          Inc(I);
+        'u': begin
+               H := UnicodeToString(HexToInt(C[1], C[2], C[3], C[4]));
+               for J := 1 to Length(H) - 1 do
+               begin
+                 R[I] := H[J];
+                 Inc(I);
+               end;
+               R[I] := H[Length(H)];
+               Inc(C, 4);
+             end;
+        else
+          R[I] := C^;
         end;
-        R[I] := H[Length(H)];
-        Inc(C, 4);
-      end
-      else
-        R[I] := C^;
     end
     else
       R[I] := C^;
@@ -1543,6 +1561,12 @@ begin
   finally
     N.Free;
   end;
+end;
+
+initialization
+begin
+  json_number_format.DecimalSeparator := '.';
+  json_number_format.ThousandSeparator := chr(0);
 end;
 
 end.
